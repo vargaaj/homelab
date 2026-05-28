@@ -1,0 +1,61 @@
+---
+# Tailscale LoadBalancer Service exposing MLflow to your tailnet only.
+apiVersion: v1
+kind: Service
+metadata:
+  # Separate from the internal mlflow Service so the exposure is explicit.
+  name: mlflow-tailnet
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+    app.kubernetes.io/part-of: homelab-mlops
+  # Tailscale-specific settings for the Kubernetes Operator.
+  annotations:
+    # Requested MagicDNS first label, usually mlflow.<tailnet>.ts.net.
+    tailscale.com/hostname: mlflow
+spec:
+  # Ask Kubernetes for an external load balancer.
+  type: LoadBalancer
+  # Tells k3s this LoadBalancer is handled by the Tailscale Operator.
+  loadBalancerClass: tailscale
+  # Send traffic to the MLflow tracking-server Pod.
+  selector:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+  ports:
+    - name: http
+      # Tailnet-visible MLflow port.
+      port: 5000
+      # Named container port on the MLflow Pod.
+      targetPort: http
+---
+# Tailscale LoadBalancer Service exposing Qdrant to your tailnet only.
+apiVersion: v1
+kind: Service
+metadata:
+  # Separate from the internal qdrant Service so the exposure is explicit.
+  name: qdrant-tailnet
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-db
+    app.kubernetes.io/part-of: homelab-mlops
+  annotations:
+    # Requested MagicDNS first label, usually qdrant.<tailnet>.ts.net.
+    tailscale.com/hostname: qdrant
+spec:
+  # Ask Kubernetes for an external load balancer.
+  type: LoadBalancer
+  # Tells k3s this LoadBalancer is handled by the Tailscale Operator.
+  loadBalancerClass: tailscale
+  # Send traffic to the Qdrant vector-db Pod.
+  selector:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-db
+  ports:
+    - name: http
+      # Tailnet-visible Qdrant REST API port.
+      port: 6333
+      # Named container port on the Qdrant Pod.
+      targetPort: http

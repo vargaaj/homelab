@@ -1,0 +1,12 @@
+# Kubernetes core API version for Namespace objects.
+apiVersion: v1
+# A Namespace groups all ML/MLOps resources away from default/system resources.
+kind: Namespace
+# Metadata names and labels the Namespace.
+metadata:
+  # All stack resources are deployed into this namespace.
+  name: mlops
+  # Labels make it easier to filter and understand related resources.
+  labels:
+    # Marks this namespace as part of the homelab MLOps stack.
+    app.kubernetes.io/part-of: homelab-mlops

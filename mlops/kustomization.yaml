@@ -1,0 +1,15 @@
+# Kustomize file that lets you deploy the whole mlops stack with:
+# kubectl apply -k mlops
+apiVersion: kustomize.config.k8s.io/v1beta1
+# This file describes a bundle of Kubernetes resources.
+kind: Kustomization
+# These are the manifest files included in the bundle.
+resources:
+  # Creates the mlops namespace first.
+  - namespace.yaml
+  # Adds MLflow storage, Deployment, and internal ClusterIP Service.
+  - mlflow.yaml
+  # Adds Qdrant StatefulSet, persistent storage, and internal ClusterIP Service.
+  - qdrant.yaml
+  # Adds tailnet-only Tailscale LoadBalancer Services.
+  - tailscale-services.yaml

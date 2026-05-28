@@ -1,0 +1,47 @@
+# Local environment files can contain secrets, hostnames, or tokens.
+.env
+.env.*
+!.env.example
+
+# Kubernetes credentials and real Secret manifests should stay local.
+.kube/
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+*.secret.yaml
+*.secret.yml
+!*.secret.example.yaml
+!*.secret.example.yml
+
+# Common private key/certificate material.
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Terraform/OpenTofu local state and variable files.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.example.json
+
+# Editor, OS, cache, and log noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log
+
+# Python/tooling caches if scripts get added later.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

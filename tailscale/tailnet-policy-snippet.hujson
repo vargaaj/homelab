@@ -1,0 +1,15 @@
+{
+  // Merge this snippet into your Tailscale tailnet policy before installing
+  // the Kubernetes Operator. This is not a Kubernetes manifest.
+
+  // tagOwners defines who is allowed to assign or create devices with tags.
+  "tagOwners": {
+    // The operator's own tag. Empty owner list means tailnet admins manage it.
+    "tag:k8s-operator": [],
+
+    // Workload/proxy tag used by services the operator exposes.
+    // tag:k8s-operator is allowed to create devices/services with tag:k8s.
+    "tag:k8s": ["tag:k8s-operator"],
+  },
+
+}

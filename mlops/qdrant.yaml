@@ -1,0 +1,125 @@
+# StatefulSet runs Qdrant with stable identity and persistent storage.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  # Stable Kubernetes name for the Qdrant workload.
+  name: qdrant
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-db
+    app.kubernetes.io/part-of: homelab-mlops
+spec:
+  # Service name used by the StatefulSet for stable network identity.
+  serviceName: qdrant
+  # Single-node Qdrant for the homelab v1 setup.
+  replicas: 1
+  # Selector tells the StatefulSet which Pods it owns.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: qdrant
+      app.kubernetes.io/component: vector-db
+  # Pod template used by the StatefulSet.
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: qdrant
+        app.kubernetes.io/component: vector-db
+        app.kubernetes.io/part-of: homelab-mlops
+    spec:
+      containers:
+        # Container running the vector database.
+        - name: qdrant
+          # Pinned Qdrant image from the plan.
+          image: qdrant/qdrant:v1.17.1
+          # Use local image cache if present; otherwise pull it.
+          imagePullPolicy: IfNotPresent
+          # Expose only the REST/HTTP API inside the Pod.
+          ports:
+            - name: http
+              containerPort: 6333
+          # Environment variables configure Qdrant.
+          env:
+            # Qdrant reads this env var as service.api_key.
+            - name: QDRANT__SERVICE__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  # Secret must be created before Qdrant starts.
+                  name: qdrant-api-key
+                  # Key inside the Secret containing the API key value.
+                  key: api-key
+          # Startup probe allows extra time for first boot or WAL replay.
+          startupProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 24
+          # Readiness says when the Service can send traffic to Qdrant.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Liveness restarts Qdrant if the TCP port stops responding.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Resource hints for a small homelab node.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          # Mount persistent Qdrant storage into the image's expected path.
+          volumeMounts:
+            - name: qdrant-storage
+              mountPath: /qdrant/storage
+  # StatefulSet creates one PVC per replica from this template.
+  volumeClaimTemplates:
+    - metadata:
+        # Volume name referenced by the volumeMount above.
+        name: qdrant-storage
+        labels:
+          app.kubernetes.io/name: qdrant
+          app.kubernetes.io/component: vector-db
+          app.kubernetes.io/part-of: homelab-mlops
+      spec:
+        # One node mounts this storage read/write at a time.
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            # Small homelab vector storage allocation for v1.
+            storage: 20Gi
+---
+# Internal-only Kubernetes Service for in-cluster Qdrant access.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-db
+    app.kubernetes.io/part-of: homelab-mlops
+spec:
+  # ClusterIP is reachable only inside Kubernetes, not directly on the LAN.
+  type: ClusterIP
+  # Route traffic to the Qdrant Pod.
+  selector:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-db
+  ports:
+    - name: http
+      # Qdrant REST API port inside the cluster.
+      port: 6333
+      # Named container port on the Qdrant Pod.
+      targetPort: http

@@ -1,0 +1,200 @@
+# PersistentVolumeClaim for MLflow's SQLite metadata database.
+apiVersion: v1
+# PVCs request durable disk from k3s's default local-path storage class.
+kind: PersistentVolumeClaim
+# Metadata names and labels this storage claim.
+metadata:
+  # The MLflow Deployment mounts this claim at /mlflow/backend.
+  name: mlflow-backend
+  # Keep it in the same namespace as the MLflow Pod.
+  namespace: mlops
+  # Labels identify what this resource belongs to.
+  labels:
+    # Kubernetes recommended label for the app name.
+    app.kubernetes.io/name: mlflow
+    # This PVC stores backend metadata, not model artifacts.
+    app.kubernetes.io/component: backend-store
+    # Groups all resources in this stack.
+    app.kubernetes.io/part-of: homelab-mlops
+# PVC specification: how much storage and what access mode we need.
+spec:
+  # One node can mount this volume read/write at a time; right for SQLite.
+  accessModes:
+    - ReadWriteOnce
+  # Resource request for disk size.
+  resources:
+    requests:
+      # Small v1 SQLite database allocation.
+      storage: 1Gi
+---
+# PersistentVolumeClaim for MLflow artifacts logged through the tracking server.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # The MLflow Deployment mounts this claim at /mlflow/artifacts.
+  name: mlflow-artifacts
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: mlflow
+    # This PVC stores run artifacts, such as small files or model outputs.
+    app.kubernetes.io/component: artifact-store
+    app.kubernetes.io/part-of: homelab-mlops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Small homelab artifact allocation for v1.
+      storage: 10Gi
+---
+# Deployment runs the MLflow tracking server container.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Stable Kubernetes name for the MLflow workload.
+  name: mlflow
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+    app.kubernetes.io/part-of: homelab-mlops
+# Deployment desired state.
+spec:
+  # SQLite is not a multi-writer backend, so run exactly one MLflow Pod.
+  replicas: 1
+  # Recreate prevents two Pods from mounting/using the SQLite DB at once during updates.
+  strategy:
+    type: Recreate
+  # Selector tells the Deployment which Pods it owns.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mlflow
+      app.kubernetes.io/component: tracking-server
+  # Pod template used when the Deployment creates or replaces a Pod.
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mlflow
+        app.kubernetes.io/component: tracking-server
+        app.kubernetes.io/part-of: homelab-mlops
+    spec:
+      containers:
+        # Container running the MLflow server process.
+        - name: mlflow
+          # Pinned MLflow image from the plan.
+          image: ghcr.io/mlflow/mlflow:v3.12.0
+          # Use the local cached image if present; otherwise pull it.
+          imagePullPolicy: IfNotPresent
+          # Run the mlflow CLI directly.
+          command:
+            - mlflow
+          # Arguments configure the tracking server.
+          args:
+            # Start MLflow's HTTP tracking server.
+            - server
+            # Next value points metadata storage at SQLite.
+            - --backend-store-uri
+            - sqlite:////mlflow/backend/mlflow.db
+            - --serve-artifacts
+            - --default-artifact-root
+            - mlflow-artifacts:/
+            - --artifacts-destination
+            - file:///mlflow/artifacts
+            # Next value controls the network interface MLflow listens on.
+            - --host
+            # Required in a container so Kubernetes Services can reach it.
+            - 0.0.0.0
+            # Next value controls the MLflow HTTP port.
+            - --port
+            # Default MLflow-style port exposed by the Service.
+            - '5000'
+            # Next value allows expected Host headers through MLflow security middleware.
+            - --allowed-hosts
+            # Permit Tailscale MagicDNS, local checks, and in-cluster service DNS names.
+            - '*.ts.net,*.ts.net:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000,mlflow,mlflow:5000,mlflow.mlops,mlflow.mlops:5000,mlflow.mlops.svc,mlflow.mlops.svc:5000,mlflow.mlops.svc.cluster.local,mlflow.mlops.svc.cluster.local:5000'
+            # Next value allows browser API calls from the Tailscale-hosted MLflow UI.
+            - --cors-allowed-origins
+            # MLflow 3.5+ defaults CORS to localhost, so remote UI API calls need the tailnet origin.
+            - 'http://mlflow.*.ts.net:5000,http://localhost:*,http://127.0.0.1:*'
+          # Container ports document and name the port for Services/probes.
+          ports:
+            - name: http
+              containerPort: 5000
+          # Readiness says when Kubernetes should send traffic to this Pod.
+          readinessProbe:
+            httpGet:
+              # /version is a lightweight MLflow endpoint.
+              path: /version
+              # Use the named container port above.
+              port: http
+            # Give MLflow a little time to initialize.
+            initialDelaySeconds: 15
+            # Check every 10 seconds after startup.
+            periodSeconds: 10
+            # Treat a probe taking over 5 seconds as failed.
+            timeoutSeconds: 5
+            # Allow several failures before marking the Pod unready.
+            failureThreshold: 6
+          # Liveness says when Kubernetes should restart a stuck container.
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: http
+            # Start liveness later than readiness to avoid early restart loops.
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Resource hints keep the homelab node from overcommitting too hard.
+          resources:
+            # Minimum resources Kubernetes tries to reserve.
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            # Maximum resources this container can use.
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          # Mount the two persistent volumes into the container filesystem.
+          volumeMounts:
+            # Mount SQLite database storage.
+            - name: backend
+              mountPath: /mlflow/backend
+            # Mount artifact storage.
+            - name: artifacts
+              mountPath: /mlflow/artifacts
+      # Volumes connect Pod volume names to PVCs.
+      volumes:
+        # Backing PVC for /mlflow/backend.
+        - name: backend
+          persistentVolumeClaim:
+            claimName: mlflow-backend
+        # Backing PVC for /mlflow/artifacts.
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: mlflow-artifacts
+---
+# Internal-only Kubernetes Service for in-cluster MLflow access.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: mlops
+  labels:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+    app.kubernetes.io/part-of: homelab-mlops
+spec:
+  # ClusterIP is reachable only inside Kubernetes, not directly on the LAN.
+  type: ClusterIP
+  # Route traffic to Pods with these labels.
+  selector:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+  # Service port mapping.
+  ports:
+    - name: http
+      # Port exposed by the Service inside the cluster.
+      port: 5000
+      # Named container port on the MLflow Pod.
+      targetPort: http
