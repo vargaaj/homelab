@@ -1,6 +1,6 @@
 # Homelab Architecture
 
-This repository documents and deploys the homelab services running on a reused CyberPowerPC desktop. The machine runs Proxmox VE as the bare-metal operating system, with application workloads intended to run inside guests such as an Ubuntu VM running k3s.
+This repository documents and deploys the homelab services running on a reused desktop. The machine runs Proxmox VE as the bare-metal operating system, with application workloads intended to run inside guests such as an Ubuntu VM running k3s.
 
 The first workload in this repo is a small MLOps platform: MLflow for experiment tracking, Qdrant for vector storage, and Tailscale for private tailnet access without exposing LAN NodePorts or public ingress.
 
